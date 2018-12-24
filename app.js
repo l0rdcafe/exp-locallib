@@ -11,7 +11,7 @@ const indexRouter = require("./routes/index");
 const usersRouter = require("./routes/users");
 const catalogRouter = require("./routes/catalog");
 
-const mongoDB = "mongodb://l0rdcafe:drag0n1t3@ds141924.mlab.com:41924/local_library";
+const mongoDB = process.env.MONGODB_URI || "mongodb://l0rdcafe:drag0n1t3@ds141924.mlab.com:41924/local_library";
 
 mongoose.connect(mongoDB);
 
