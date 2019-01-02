@@ -1,109 +1,115 @@
-const async = require("async");
+const { promisify } = require("util");
 const { body, validationResult } = require("express-validator/check");
 const { sanitizeBody } = require("express-validator/filter");
 
+const knex = require("../db/knex_instance");
 const Book = require("../models/book");
 const Author = require("../models/author");
 const Genre = require("../models/genre");
 const BookInstance = require("../models/bookinstance");
+const redis = require("../db/redis");
 
-exports.index = function(req, res) {
-  async.parallel(
-    {
-      book_count(cb) {
-        Book.countDocuments({}, cb);
-      },
-      book_instance_count(cb) {
-        BookInstance.countDocuments({}, cb);
-      },
-      book_instance_available_count(cb) {
-        BookInstance.countDocuments({ status: "Available" }, cb);
-      },
-      author_count(cb) {
-        Author.countDocuments({}, cb);
-      },
-      genre_count(cb) {
-        Genre.countDocuments({}, cb);
-      }
-    },
-    (err, results) => {
-      res.render("index", { title: "Local Library Home", error: err, data: results });
+exports.index = async function(req, res) {
+  try {
+    const bookCount = await knex("books").count("*");
+    const bookinstanceCount = await knex("bookinstances").count("*");
+    const bookinstanceAvailableCount = await knex("bookinstances")
+      .count("*")
+      .where("status", "=", "Available");
+    const authorCount = await knex("authors").count("*");
+    const genreCount = await knex("genres").count("*");
+
+    const { count: book_count } = bookCount[0];
+    const { count: book_instance_count } = bookinstanceCount[0];
+    const { count: book_instance_available_count } = bookinstanceAvailableCount[0];
+    const { count: author_count } = authorCount[0];
+    const { count: genre_count } = genreCount[0];
+    const user_countRes = redis.incr("count");
+    let user_count;
+
+    if (user_countRes) {
+      const getAsync = promisify(redis.get).bind(redis);
+      user_count = await getAsync("count");
+    } else {
+      user_count = 1;
     }
-  );
+
+    const data = { book_count, book_instance_count, book_instance_available_count, author_count, genre_count, user_count };
+    res.render("index", { title: "Local Library Home", data });
+  } catch (e) {
+    console.log(e);
+    res.render("index", { title: "Local Library Home", error: e });
+  }
 };
 
 // Display list of all books.
-exports.book_list = function(req, res, next) {
-  Book.find({}, "title author")
-    .populate("author")
-    .exec((err, list_books) => {
-      if (err) {
-        return next(err);
-      }
-      res.render("book_list", { title: "Book List", book_list: list_books });
-    });
+exports.book_list = async function(req, res, next) {
+  try {
+    const bookList = await knex("books")
+      .join("authors", "books.author_id", "authors.id")
+      .select(
+        "books.id",
+        "books.title",
+        "authors.first_name as author_first_name",
+        "authors.family_name as author_family_name",
+        "books.author_id"
+      );
+    const book_list = [...bookList];
+    res.render("book_list", { title: "Book List", book_list });
+  } catch (e) {
+    console.log(e);
+    next(e);
+    res.render("book_list", { title: "Book List", error: e });
+  }
 };
 
 // Display detail page for a specific book.
-exports.book_detail = function(req, res, next) {
-  async.parallel(
-    {
-      book(cb) {
-        Book.findById(req.params.id)
-          .populate("author")
-          .populate("genre")
-          .exec(cb);
-      },
-      book_instance(cb) {
-        BookInstance.find({ book: req.params.id }).exec(cb);
-      }
-    },
-    (err, results) => {
-      if (err) {
-        return next(err);
-      }
-      if (!results.book) {
-        const e = new Error("Book not found");
-        e.status = 404;
-        return next(e);
-      }
-      res.render("book_detail", { title: "Title", book: results.book, book_instances: results.book_instance });
-    }
-  );
+exports.book_detail = async function(req, res, next) {
+  try {
+    const bookResult = await knex("books")
+      .where("books.id", req.params.id)
+      .join("authors", "books.author_id", "authors.id")
+      .join("genres", "books.genre_id", "genres.id")
+      .select(
+        "books.id as book_id",
+        "books.title",
+        "books.summary",
+        "books.isbn",
+        "genres.name as genre",
+        "authors.first_name as author_first_name",
+        "authors.family_name as author_family_name",
+        "authors.id as author_id"
+      );
+    const bookinstanceResult = await knex("bookinstances")
+      .where("book_id", req.params.id)
+      .select("status", "id as instance_id", "due_date", "imprint");
+    const book = bookResult[0];
+    const book_instances = [...bookinstanceResult];
+    res.render("book_detail", { title: "Title", book, book_instances });
+  } catch (e) {
+    console.log(e);
+    next(e);
+    res.render("book_detail", { title: "Title", error: e });
+  }
 };
 
 // Display book create form on GET.
-exports.book_create_get = function(req, res, next) {
-  async.parallel(
-    {
-      authors(cb) {
-        Author.find(cb);
-      },
-      genres(cb) {
-        Genre.find(cb);
-      }
-    },
-    (err, results) => {
-      if (err) {
-        return next(err);
-      }
-      res.render("book_form", { title: "Create Book", authors: results.authors, genres: results.genres });
-    }
-  );
+exports.book_create_get = async function(req, res, next) {
+  try {
+    const authorsResult = await knex("authors").select("family_name", "first_name", "id");
+    const genresResult = await knex("genres").select("name", "id");
+    const authors = [...authorsResult];
+    const genres = [...genresResult];
+    res.render("book_form", { title: "Create Book", authors, genres });
+  } catch (e) {
+    console.log(e);
+    next(e);
+    res.render("book_form", { title: "Create Book", error: e });
+  }
 };
 
 // Handle book create on POST.
 exports.book_create_post = [
-  (req, res, next) => {
-    if (!(req.body.genre instanceof Array)) {
-      if (typeof req.body.genre === "undefined") {
-        req.body.genre = [];
-      } else {
-        req.body.genre = new Array(req.body.genre);
-      }
-    }
-    next();
-  },
   body("title", "Title must not be empty.")
     .isLength({ min: 1 })
     .trim(),
@@ -119,163 +125,104 @@ exports.book_create_post = [
   sanitizeBody("*")
     .trim()
     .escape(),
-  (req, res, next) => {
+  async (req, res, next) => {
     const errors = validationResult(req);
 
-    const book = new Book({
-      title: req.body.title,
-      author: req.body.author,
-      summary: req.body.summary,
-      isbn: req.body.isbn,
-      genre: req.body.genre
-    });
-
     if (!errors.isEmpty()) {
-      async.parallel(
-        {
-          authors(cb) {
-            Author.find(cb);
-          },
-          genres(cb) {
-            Genre.find(cb);
-          }
-        },
-        (err, results) => {
-          if (err) {
-            return next(err);
-          }
-          for (let i = 0; i < results.genres.length; i += 1) {
-            if (book.genre.indexOf(results.genres[i]._id) > -1) {
-              results.genres[i].checked = "true";
-            }
-          }
-          res.render("book_form", {
-            title: "Create Book",
-            authors: results.authors,
-            genres: results.genres,
-            book,
-            errors: errors.array()
-          });
-        }
-      );
+      try {
+        const authorsResult = await knex("authors").select("first_name", "family_name", "id");
+        const genresResult = await knex("genres").select("name", "id");
+        const genres = [...genresResult];
+        const authors = [...authorsResult];
+        res.render("book_form", { title: "Create Book", authors, genres });
+      } catch (e) {
+        console.log(e);
+        res.render("book_form", { title: "Create Book", errors: errors.array() });
+      }
     } else {
-      book.save(e => {
-        if (e) {
-          return next(e);
-        }
-        res.redirect(book.url);
-      });
+      try {
+        const id = await knex("books")
+          .insert({
+            title: req.body.title,
+            isbn: req.body.isbn,
+            summary: req.body.summary,
+            author_id: Number(req.body.author),
+            genre_id: Number(req.body.genre)
+          })
+          .returning("id");
+        res.redirect(`/catalog/book/${id}`);
+      } catch (e) {
+        next(e);
+      }
     }
   }
 ];
 
 // Display book delete form on GET.
-exports.book_delete_get = function(req, res, next) {
-  async.parallel(
-    {
-      book(cb) {
-        Book.findById(req.params.id).exec(cb);
-      },
-      bookinstances(cb) {
-        BookInstance.find({ book: req.params.id }).exec(cb);
-      }
-    },
-    (err, results) => {
-      if (err) {
-        return next(err);
-      }
-      if (!results.book) {
-        res.redirect("/catalog/books");
-      }
-      res.render("book_delete", { title: "Delete Book", book: results.book, bookinstances: results.bookinstances });
-    }
-  );
+exports.book_delete_get = async function(req, res, next) {
+  try {
+    const bookResult = await knex("books")
+      .where("id", req.params.id)
+      .select("id", "title");
+    const bookinstancesResult = await knex("bookinstances")
+      .where("book_id", req.params.id)
+      .select("status", "id", "imprint");
+    const book = bookResult[0];
+    const bookinstances = [...bookinstancesResult];
+    res.render("book_delete", { title: "Delete Book", book, bookinstances });
+  } catch (e) {
+    next(e);
+    res.render("book_delete", { title: "Delete Book", error: e });
+  }
 };
 
 // Handle book delete on POST.
-exports.book_delete_post = function(req, res, next) {
-  async.parallel(
-    {
-      book(cb) {
-        Book.findById(req.body.bookid).exec(cb);
-      },
-      bookinstances(cb) {
-        BookInstance.find({ book: req.body.bodyid }).exec(cb);
-      }
-    },
-    (err, results) => {
-      if (err) {
-        return next(err);
-      }
-      if (results.bookinstances.length > 0) {
-        res.render("book_delete", { title: "Delete Book", book: results.book, bookinstances: results.bookinstances });
-      } else {
-        Book.findByIdAndRemove(req.body.bookid, e => {
-          if (e) {
-            return next(e);
-          }
-          res.redirect("/catalog/books");
-        });
-      }
+exports.book_delete_post = async function(req, res, next) {
+  try {
+    const bookResult = await knex("books")
+      .where("id", req.body.bookid)
+      .select("id", "title");
+    const bookinstancesResult = await knex("bookinstances")
+      .where("book_id", req.body.bookid)
+      .select("status", "imprint", "id");
+    const bookinstances = [...bookinstancesResult];
+    const book = bookResult[0];
+
+    if (bookinstances.length > 0) {
+      res.render("book_delete", { title: "Delete Book", book, bookinstances });
+    } else {
+      await knex("books")
+        .where("id", req.body.bookid)
+        .del();
+      res.redirect("/catalog/books");
     }
-  );
+  } catch (e) {
+    console.log(e);
+    next(e);
+  }
 };
 
 // Display book update form on GET.
-exports.book_update_get = function(req, res, next) {
-  async.parallel(
-    {
-      book(cb) {
-        Book.findById(req.params.id)
-          .populate("author")
-          .populate("genre")
-          .exec(cb);
-      },
-      authors(cb) {
-        Author.find(cb);
-      },
-      genres(cb) {
-        Genre.find(cb);
-      }
-    },
-    (err, results) => {
-      if (err) {
-        return next(err);
-      }
-      if (!results.book) {
-        const e = new Error("Book not found");
-        e.status = 404;
-        return next(e);
-      }
-      for (let gIter = 0; gIter < results.genres.length; gIter += 1) {
-        for (let bIter = 0; bIter < results.book.genre.length; bIter += 1) {
-          if (results.genres[gIter]._id.toString() == results.book.genre[bIter]._id.toString()) {
-            results.genres[gIter].checked = "true";
-          }
-        }
-      }
-      res.render("book_form", {
-        title: "Update Book",
-        authors: results.authors,
-        genres: results.genres,
-        book: results.book
-      });
-    }
-  );
+exports.book_update_get = async function(req, res, next) {
+  try {
+    const bookResult = await knex("books")
+      .where("books.id", req.params.id)
+      .join("genres", "books.genre_id", "genres.id")
+      .select("books.title", "books.summary", "books.isbn", "books.author_id", "genres.name as genre");
+    const authorsResult = await knex("authors").select("first_name", "family_name", "id");
+    const genresResult = await knex("genres").select("name", "id");
+    const authors = [...authorsResult];
+    const genres = [...genresResult];
+    const book = bookResult[0];
+    res.render("book_form", { title: "Update Book", authors, book, genres });
+  } catch (e) {
+    console.log(e);
+    next(e);
+  }
 };
 
 // Handle book update on POST.
 exports.book_update_post = [
-  (req, rest, next) => {
-    if (!(req.body.genre instanceof Array)) {
-      if (typeof req.body.genre === "undefined") {
-        req.body.genre = [];
-      } else {
-        req.body.genre = new Array(req.body.genre);
-      }
-    }
-    next();
-  },
   body("title", "Title must not be empty.")
     .isLength({ min: 1 })
     .trim(),
@@ -303,53 +250,35 @@ exports.book_update_post = [
   sanitizeBody("genre.*")
     .trim()
     .escape(),
-  (req, res, next) => {
+  async (req, res, next) => {
     const errors = validationResult(req);
 
-    const book = new Book({
-      title: req.body.title,
-      author: req.body.author,
-      summary: req.body.summary,
-      isbn: req.body.isbn,
-      genre: typeof req.body.genre === "undefined" ? [] : req.body.genre,
-      _id: req.params.id
-    });
-
     if (!errors.isEmpty()) {
-      async.parallel(
-        {
-          authors(cb) {
-            Author.find(cb);
-          },
-          genres(cb) {
-            Genre.find(cb);
-          }
-        },
-        (err, results) => {
-          if (err) {
-            return next(err);
-          }
-          for (let i = 0; i < results.genres.length; i += 1) {
-            if (book.genre.indexOf(results.genres[i]._id) > -1) {
-              results.genres[i].checked = "true";
-            }
-          }
-          res.render("book_form", {
-            title: "Update Book",
-            authors: results.authors,
-            genres: results.genres,
-            book,
-            errors: errors.array()
-          });
-        }
-      );
+      try {
+        const authorsResult = await knex("authors").select("first_name", "family_name", "id");
+        const genresResult = await knex("genres").select("name", "id");
+        const authors = [...authorsResult];
+        const genres = [...genresResult];
+        res.render("book_form", { title: "Update Book", authors, genres });
+      } catch (e) {
+        next(e);
+        res.render("book_form", { title: "Update Book", errors: errors.array() });
+      }
     } else {
-      Book.findByIdAndUpdate(req.params.id, book, {}, (e, theBook) => {
-        if (e) {
-          return next(e);
-        }
-        res.redirect(theBook.url);
-      });
+      try {
+        await knex("books")
+          .where("id", req.params.id)
+          .update({
+            title: req.body.title,
+            author_id: req.body.author,
+            summary: req.body.summary,
+            isbn: req.body.isbn,
+            genre_id: req.body.genre
+          });
+        res.redirect(`/catalog/book/${req.params.id}`);
+      } catch (e) {
+        next(e);
+      }
     }
   }
 ];

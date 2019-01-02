@@ -12,12 +12,12 @@ block content
       dl
         each instance in bookinstances
           dt
-            a(href=instance.url) #{instance.status}
-          dd #{instance.title}
+            a(href=`/catalog/bookinstance/${instance.id}`) #{instance.status}
+          dd #{instance.imprint}
   else
     p Do you really want to delete this Book?
 
     form(method="POST" action="")
       div.form-group
-        input#bookid.form-control(type="hidden", name="bookid", required="true" value=book._id)
+        input#bookid.form-control(type="hidden", name="bookid", required="true" value=book.id)
       button.btn.btn-primary(type="submit") Delete

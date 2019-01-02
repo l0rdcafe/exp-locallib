@@ -10,6 +10,7 @@ const helmet = require("helmet");
 const indexRouter = require("./routes/index");
 const usersRouter = require("./routes/users");
 const catalogRouter = require("./routes/catalog");
+const redis = require("./db/redis");
 
 const mongoDB = process.env.MONGODB_URI || "mongodb://l0rdcafe:drag0n1t3@ds141924.mlab.com:41924/local_library";
 

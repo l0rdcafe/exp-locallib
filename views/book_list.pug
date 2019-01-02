@@ -6,8 +6,8 @@ block content
   ul
     each book in book_list
       li
-        a(href=book.url) #{book.title}
-        | (#{book.author.name})
+        a(href=`book/${book.id}`) #{book.title}
+        | (#{book.author_family_name}, #{book.author_first_name})
 
     else
       li There are no books.
