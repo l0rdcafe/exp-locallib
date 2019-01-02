@@ -8,8 +8,6 @@ exports.up = function(knex, Promise) {
     t.foreign("book_id")
       .references("id")
       .inTable("books");
-    t.index("status", "status_idx");
-    t.index("book_id", "book_id_idx");
   });
 };
 
