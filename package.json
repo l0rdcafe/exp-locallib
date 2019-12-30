@@ -26,7 +26,9 @@
     "morgan": "~1.9.0",
     "pg": "^7.7.1",
     "pug": "2.0.0-beta11",
-    "redis": "^2.8.0"
+    "redis": "^2.8.0",
+    "sequelize": "^4.42.0",
+    "serve-favicon": "^2.5.0"
   },
   "devDependencies": {
     "nodemon": "^1.18.9"

@@ -1,0 +1,21 @@
+extends layout
+
+block content
+  h1 Tag: #{tag.name}
+
+  div(style='margin-left:20px;margin-top:20px')
+
+    h4 Books
+
+    dl
+      each book in tag_books
+        dt
+          a(href="/catalog/book/"+book.id) #{book.title}
+        dd #{book.summary}
+      else
+        p This tag has no books.
+    hr
+    p
+      a(href=tag.id+"/delete") Delete tag
+    p
+      a(href=tag.id+"/update") Update tag

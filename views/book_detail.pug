@@ -8,6 +8,11 @@ block content
   p #[strong Summary:] #{book.summary}
   p #[strong ISBN:] #{book.isbn}
   p #[strong Genre:] #{book.genre}
+  p #[strong Tags:]
+  if tags.length
+    ul
+      each tag in tags
+        li #{tag}
   div(style='margin-left:20px;margin-top:20px')
     h4 Copies
 

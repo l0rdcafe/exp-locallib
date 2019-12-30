@@ -1,49 +1,29 @@
 const async = require("async");
-const Book = require("../models/book");
-const Author = require("../models/author");
 const { body, validationResult } = require("express-validator/check");
 const { sanitizeBody } = require("express-validator/filter");
+const db = require("../db/sequelize");
 
 // Display list of all Authors.
-exports.author_list = function(req, res, next) {
-  Author.find()
-    .sort([["family_name", "ascending"]])
-    .exec((err, list_authors) => {
-      if (err) {
-        return next(err);
-      }
-      res.render("author_list", { title: "Author List", author_list: list_authors });
-    });
+exports.author_list = async function(req, res, next) {
+  try {
+    const list_authors = await db.authors.findAll({ raw: true });
+    console.log(list_authors);
+    res.render("author_list", { title: "Author List", author_list: list_authors });
+  } catch (e) {
+    next(e);
+  }
 };
 
 // Display detail page for a specific Author.
-exports.author_detail = function(req, res, next) {
-  async.parallel(
-    {
-      author(cb) {
-        Author.findById(req.params.id).exec(cb);
-      },
-      authors_books(cb) {
-        Book.find({ author: req.params.id }, "title summary").exec(cb);
-      }
-    },
-    (err, results) => {
-      if (err) {
-        return next(err);
-      }
-      if (!results.author) {
-        const e = new Error("Author not found");
-        e.status = 404;
-        return next(e);
-      }
-      console.log(results);
-      res.render("author_detail", {
-        title: "Author Detail",
-        author: results.author,
-        authors_books: results.authors_books
-      });
-    }
-  );
+exports.author_detail = async function(req, res, next) {
+  try {
+   const author = await db.authors.findById(req.params.id);
+   const authors_books = await db.books.findAll({ where: {author_id: req.params.id}, raw: true})
+   console.log(author, authors_books);
+   res.render("author_detail", { title: "Author Detail", author, authors_books });
+  } catch (e) {
+    next(e);
+  }
 };
 
 // Display Author create form on GET.
@@ -218,13 +198,12 @@ exports.author_update_post = [
     if (!errors.isEmpty()) {
       res.render("author_form", { title: "Update Author", author, errors: errors.array() });
       return undefined;
-    } else {
-      Author.findByIdAndUpdate(req.params.id, author, {}, (err, theAuthor) => {
-        if (err) {
-          return next(err);
-        }
-        res.redirect(theAuthor.url);
-      });
     }
+    Author.findByIdAndUpdate(req.params.id, author, {}, (err, theAuthor) => {
+      if (err) {
+        return next(err);
+      }
+      res.redirect(theAuthor.url);
+    });
   }
 ];

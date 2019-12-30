@@ -6,7 +6,7 @@ block content
   ul
     each author in author_list
       li
-        a(href=author.url) #{author.name}
+        a(href="author/"+author.id) #{author.first_name} #{author.last_name} 
         | (#{author.date_of_birth} - #{author.date_of_death})
     else
       li There are no authors.

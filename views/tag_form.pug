@@ -1,0 +1,14 @@
+extends layout
+
+block content
+  h1 #{title}
+
+  form(method="POST" action="")
+    div.form-group
+      label(for="name") Tag:
+      input#name.form-control(type="text", placeholder="Funny, Sad, Thriller etc.", name="name" value=(undefined===tag ? "" : tag.name))
+    button.btn.btn-primary(type="submit") Submit
+  if errors
+    ul
+      for error in errors
+        li!= error.msg

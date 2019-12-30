@@ -18,12 +18,14 @@ exports.index = async function(req, res) {
       .where("status", "=", "Available");
     const authorCount = await knex("authors").count("*");
     const genreCount = await knex("genres").count("*");
+    const tagCount = await knex("tags").count("*");
 
     const { count: book_count } = bookCount[0];
     const { count: book_instance_count } = bookinstanceCount[0];
     const { count: book_instance_available_count } = bookinstanceAvailableCount[0];
     const { count: author_count } = authorCount[0];
     const { count: genre_count } = genreCount[0];
+    const { count: tag_count } = tagCount[0];
     const user_countRes = redis.incr("count");
     let user_count;
 
@@ -34,7 +36,15 @@ exports.index = async function(req, res) {
       user_count = 1;
     }
 
-    const data = { book_count, book_instance_count, book_instance_available_count, author_count, genre_count, user_count };
+    const data = {
+      book_count,
+      book_instance_count,
+      book_instance_available_count,
+      author_count,
+      genre_count,
+      user_count,
+      tag_count
+    };
     res.render("index", { title: "Local Library Home", data });
   } catch (e) {
     console.log(e);
@@ -83,9 +93,14 @@ exports.book_detail = async function(req, res, next) {
     const bookinstanceResult = await knex("bookinstances")
       .where("book_id", req.params.id)
       .select("status", "id as instance_id", "due_date", "imprint");
+    const tagsResult = await knex.raw(
+      "SELECT tags.name FROM tags JOIN tags_books ON tags.id = tags_books.tag_id JOIN books ON books.id = tags_books.book_id WHERE books.id = ?",
+      req.params.id
+    );
+    const tags = [...tagsResult.rows].map(i => i.name);
     const book = bookResult[0];
     const book_instances = [...bookinstanceResult];
-    res.render("book_detail", { title: "Title", book, book_instances });
+    res.render("book_detail", { title: "Title", book, book_instances, tags });
   } catch (e) {
     console.log(e);
     next(e);
@@ -98,9 +113,11 @@ exports.book_create_get = async function(req, res, next) {
   try {
     const authorsResult = await knex("authors").select("family_name", "first_name", "id");
     const genresResult = await knex("genres").select("name", "id");
+    const tagsResult = await knex("tags").select("*");
     const authors = [...authorsResult];
     const genres = [...genresResult];
-    res.render("book_form", { title: "Create Book", authors, genres });
+    const tags = [...tagsResult];
+    res.render("book_form", { title: "Create Book", authors, genres, tags });
   } catch (e) {
     console.log(e);
     next(e);
@@ -110,6 +127,16 @@ exports.book_create_get = async function(req, res, next) {
 
 // Handle book create on POST.
 exports.book_create_post = [
+  (req, res, next) => {
+    if (!(req.body.tag instanceof Array)) {
+      if (typeof req.body.tag === "undefined") {
+        req.body.tag = [];
+      } else {
+        req.body.tag = new Array(req.body.tag);
+      }
+    }
+    next();
+  },
   body("title", "Title must not be empty.")
     .isLength({ min: 1 })
     .trim(),
@@ -132,9 +159,11 @@ exports.book_create_post = [
       try {
         const authorsResult = await knex("authors").select("first_name", "family_name", "id");
         const genresResult = await knex("genres").select("name", "id");
+        const tagsResult = await knex("tags").select("*");
         const genres = [...genresResult];
         const authors = [...authorsResult];
-        res.render("book_form", { title: "Create Book", authors, genres });
+        const tags = [...tagsResult];
+        res.render("book_form", { title: "Create Book", authors, genres, tags });
       } catch (e) {
         console.log(e);
         res.render("book_form", { title: "Create Book", errors: errors.array() });
@@ -150,6 +179,18 @@ exports.book_create_post = [
             genre_id: Number(req.body.genre)
           })
           .returning("id");
+        const tagsResult = await knex("tags").select("*");
+        const tags = [...tagsResult];
+        req.body.tag = req.body.tag.map(n => parseInt(n, 10));
+        for (let i = 0; i < tags.length; i += 1) {
+          if (req.body.tag.indexOf(tags[i].id) > -1) {
+            tags[i].checked = "true";
+            await knex("tags_books").insert({
+              book_id: id[0],
+              tag_id: tags[i].id
+            });
+          }
+        }
         res.redirect(`/catalog/book/${id}`);
       } catch (e) {
         next(e);
@@ -191,6 +232,9 @@ exports.book_delete_post = async function(req, res, next) {
     if (bookinstances.length > 0) {
       res.render("book_delete", { title: "Delete Book", book, bookinstances });
     } else {
+      await knex("tags_books")
+        .where("book_id", req.body.bookid)
+        .del();
       await knex("books")
         .where("id", req.body.bookid)
         .del();
@@ -211,10 +255,22 @@ exports.book_update_get = async function(req, res, next) {
       .select("books.title", "books.summary", "books.isbn", "books.author_id", "genres.name as genre");
     const authorsResult = await knex("authors").select("first_name", "family_name", "id");
     const genresResult = await knex("genres").select("name", "id");
+    const tagsResult = await knex.raw(
+      "SELECT tags.id FROM tags JOIN tags_books ON tags.id = tags_books.tag_id JOIN books ON books.id = tags_books.book_id WHERE books.id = ?",
+      req.params.id
+    );
+    const allTags = await knex("tags").select("*");
+    const checkedTags = [...tagsResult.rows].map(tag => tag.id);
+    for (let i = 0; i < allTags.length; i += 1) {
+      if (checkedTags.indexOf(allTags[i].id) > -1) {
+        allTags[i].checked = "true";
+      }
+    }
     const authors = [...authorsResult];
     const genres = [...genresResult];
     const book = bookResult[0];
-    res.render("book_form", { title: "Update Book", authors, book, genres });
+    const tags = [...allTags];
+    res.render("book_form", { title: "Update Book", authors, book, genres, tags });
   } catch (e) {
     console.log(e);
     next(e);
@@ -223,6 +279,16 @@ exports.book_update_get = async function(req, res, next) {
 
 // Handle book update on POST.
 exports.book_update_post = [
+  (req, res, next) => {
+    if (!(req.body.tag instanceof Array)) {
+      if (typeof req.body.tag === "undefined") {
+        req.body.tag = [];
+      } else {
+        req.body.tag = new Array(req.body.tag);
+      }
+    }
+    next();
+  },
   body("title", "Title must not be empty.")
     .isLength({ min: 1 })
     .trim(),
@@ -250,8 +316,12 @@ exports.book_update_post = [
   sanitizeBody("genre.*")
     .trim()
     .escape(),
+  sanitizeBody("tag.*")
+    .trim()
+    .escape(),
   async (req, res, next) => {
     const errors = validationResult(req);
+    console.log("zobry");
 
     if (!errors.isEmpty()) {
       try {
@@ -259,13 +329,50 @@ exports.book_update_post = [
         const genresResult = await knex("genres").select("name", "id");
         const authors = [...authorsResult];
         const genres = [...genresResult];
-        res.render("book_form", { title: "Update Book", authors, genres });
+
+        const tagsResult = await knex.raw(
+          "SELECT tags.id FROM tags JOIN tags_books ON tags.id = tags_books.tag_id JOIN books ON books.id = tags_books.book_id WHERE books.id = ?",
+          req.params.id
+        );
+        const allTags = await knex("tags").select("*");
+        const checkedTags = [...tagsResult.rows].map(tag => tag.id);
+        for (let i = 0; i < allTags.length; i += 1) {
+          if (checkedTags.indexOf(allTags[i].id) > -1) {
+            allTags[i].checked = "true";
+          }
+        }
+        const tags = [...allTags];
+        res.render("book_form", { title: "Update Book", authors, genres, tags });
       } catch (e) {
         next(e);
         res.render("book_form", { title: "Update Book", errors: errors.array() });
       }
     } else {
       try {
+        const checkedTagsResult = await knex.raw(
+          "SELECT tags.id FROM tags JOIN tags_books ON tags.id = tags_books.tag_id JOIN books ON books.id = tags_books.book_id WHERE books.id = ?",
+          req.params.id
+        );
+        const checkedTags = [...checkedTagsResult.rows].map(tag => tag.id);
+        req.body.tag = req.body.tag.map(id => parseInt(id, 10));
+
+        for (let i = 0; i < checkedTags.length; i += 1) {
+          if (req.body.tag.indexOf(checkedTags[i]) < 0) {
+            await knex("tags_books")
+              .where("book_id", req.params.id)
+              .andWhere("tag_id", checkedTags[i])
+              .del();
+          }
+        }
+
+        req.body.tag.forEach(async id => {
+          if (checkedTags.indexOf(id) < 0) {
+            await knex("tags_books")
+              .insert({ book_id: req.params.id, tag_id: id })
+              .whereNotExists("tag_id", id);
+          }
+        });
+
         await knex("books")
           .where("id", req.params.id)
           .update({
@@ -275,6 +382,7 @@ exports.book_update_post = [
             isbn: req.body.isbn,
             genre_id: req.body.genre
           });
+
         res.redirect(`/catalog/book/${req.params.id}`);
       } catch (e) {
         next(e);

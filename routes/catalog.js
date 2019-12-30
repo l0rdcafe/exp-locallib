@@ -6,6 +6,7 @@ const book_controller = require("../controllers/bookController");
 const author_controller = require("../controllers/authorController");
 const genre_controller = require("../controllers/genreController");
 const book_instance_controller = require("../controllers/bookinstanceController");
+const tag_controller = require("../controllers/tagController");
 
 router.get("/", book_controller.index);
 
@@ -56,6 +57,22 @@ router.post("/genre/:id/update", genre_controller.genre_update_post);
 router.get("/genre/:id", genre_controller.genre_detail);
 
 router.get("/genres", genre_controller.genre_list);
+
+router.get("/tags", tag_controller.tag_list);
+
+router.get("/tag/:id", tag_controller.tag_detail);
+
+router.get("/tag/create", tag_controller.tag_create_get);
+
+router.post("/tag/create", tag_controller.tag_create_post);
+
+router.get("/tag/:id/delete", tag_controller.tag_delete_get);
+
+router.post("/tag/:id/delete", tag_controller.tag_delete_post);
+
+router.get("/tag/:id/update", tag_controller.tag_update_get);
+
+router.post("/tag/:id/update", tag_controller.tag_update_post);
 
 router.get("/bookinstance/create", book_instance_controller.bookinstance_create_get);
 

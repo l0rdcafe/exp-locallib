@@ -31,6 +31,13 @@ block content
                 option(value=genre.id selected=(genre.name==book.genre) ? "selected" : false) #{genre.name}
               else
                 option(value=genre.id) #{genre.name}
+    div.form-group
+      label Tags:
+      div
+        for tag in tags
+          div(style='display: inline; padding-right:10px;')
+            input.checkbox-input(type='checkbox', name='tag', id=tag.id, value=tag.id checked=tag.checked)
+            label(for=tag.id) #{tag.name}
     button.btn.btn-primary(type="submit") Submit
   if errors
     ul

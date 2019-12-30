@@ -6,11 +6,12 @@ const logger = require("morgan");
 const mongoose = require("mongoose");
 const compression = require("compression");
 const helmet = require("helmet");
+const favicon = require("serve-favicon");
 
 const indexRouter = require("./routes/index");
 const usersRouter = require("./routes/users");
 const catalogRouter = require("./routes/catalog");
-const redis = require("./db/redis");
+require("./db/redis");
 
 const mongoDB = process.env.MONGODB_URI || "mongodb://l0rdcafe:drag0n1t3@ds141924.mlab.com:41924/local_library";
 
@@ -35,6 +36,7 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(compression());
 app.use(express.static(path.join(__dirname, "public")));
+app.use(favicon(path.join(__dirname, "assets/favicon.ico")));
 
 app.use("/", indexRouter);
 app.use("/users", usersRouter);
